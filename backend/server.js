@@ -806,13 +806,26 @@ app.post('/api/rfid/scan', deviceOrUserAuth, async (req, res) => {
     activeBooking.relayActivationStatus = 'ACTIVATED';
     activeBooking.lastScanTime = new Date();
 
-    const endTime = new Date(activeBooking.endTime);
+    // Dynamically calculate slotEndTime starting FROM NOW when card is tapped at machine
+    let endTime = new Date(activeBooking.endTime);
+    const nowMs = now.getTime();
+
+    if (activeBooking.timeSlot && activeBooking.timeSlot.includes('Mins')) {
+      const match = activeBooking.timeSlot.match(/(\d+)\s*Mins/i);
+      const durationMins = match ? parseInt(match[1]) : 2;
+      endTime = new Date(nowMs + durationMins * 60 * 1000);
+    } else if (!activeBooking.endTime || new Date(activeBooking.endTime).getTime() <= nowMs + 10000) {
+      endTime = new Date(nowMs + 60 * 60 * 1000);
+    }
+
+    activeBooking.endTime = endTime;
 
     if (!useInMemory && mongoose.connection.readyState === 1) {
       try {
         await Booking.findByIdAndUpdate(activeBooking._id, {
           relayActivationStatus: 'ACTIVATED',
-          lastScanTime: new Date()
+          lastScanTime: new Date(),
+          endTime: endTime
         });
         await Machine.findOneAndUpdate(
           { machineId: 'HABBITT-M01' },
@@ -1064,6 +1077,21 @@ app.post('/api/machine/toggle', authenticate, async (req, res) => {
     }
 
     const targetStatus = relayState ? 'RUNNING' : 'STANDBY';
+    let targetSlotEndTime = null;
+
+    if (relayState && userActiveBooking) {
+      const nowMs = Date.now();
+      let eTime = userActiveBooking.endTime ? new Date(userActiveBooking.endTime) : null;
+      if (userActiveBooking.timeSlot && userActiveBooking.timeSlot.includes('Mins')) {
+        const match = userActiveBooking.timeSlot.match(/(\d+)\s*Mins/i);
+        const durationMins = match ? parseInt(match[1]) : 2;
+        targetSlotEndTime = new Date(nowMs + durationMins * 60 * 1000);
+      } else if (!eTime || eTime.getTime() <= nowMs + 10000) {
+        targetSlotEndTime = new Date(nowMs + 60 * 60 * 1000);
+      } else {
+        targetSlotEndTime = eTime;
+      }
+    }
 
     if (!useInMemory && mongoose.connection.readyState === 1) {
       const updated = await Machine.findOneAndUpdate(
@@ -1073,7 +1101,8 @@ app.post('/api/machine/toggle', authenticate, async (req, res) => {
           status: targetStatus,
           activeBookingId: relayState ? userActiveBooking.bookingId : null,
           activeUser: relayState ? (registeredUser ? registeredUser.name : 'User') : null,
-          activeUserId: relayState ? currentUserId : null
+          activeUserId: relayState ? currentUserId : null,
+          slotEndTime: targetSlotEndTime
         },
         { new: true }
       );
@@ -1084,6 +1113,7 @@ app.post('/api/machine/toggle', authenticate, async (req, res) => {
       inMemoryStore.machine.activeBookingId = relayState ? userActiveBooking.bookingId : null;
       inMemoryStore.machine.activeUser = relayState ? (registeredUser ? registeredUser.name : 'User') : null;
       inMemoryStore.machine.activeUserId = relayState ? currentUserId : null;
+      inMemoryStore.machine.slotEndTime = targetSlotEndTime;
       return res.json(inMemoryStore.machine);
     }
   } catch (err) {
