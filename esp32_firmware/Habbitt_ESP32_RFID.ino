@@ -20,12 +20,12 @@
  *    - GND       --> ESP32 GND
  * 
  * Wi-Fi Credentials:
- *    - SSID:     "Harsh"
- *    - Password: "12345678"
+ *    - SSID:     "YOUR_WIFI_SSID"
+ *    - Password: "YOUR_WIFI_PASSWORD"
  * 
  * Production Deployment Server URL:
  *    - Change BACKEND_BASE_URL to your Render Web Service domain:
- *      e.g. "https://your-habbitt-backend.onrender.com"
+ *      e.g. "https://habbitt-backend.onrender.com"
  * ============================================================================
  */
 
@@ -49,12 +49,11 @@
 #define RELAY_OFF (IS_ACTIVE_LOW ? HIGH : LOW)
 
 // --- WI-FI & SERVER CONFIGURATION ---
-const char* ssid = "Harsh";
-const char* password = "12345678";
+const char* ssid = "YOUR_WIFI_SSID";
+const char* password = "YOUR_WIFI_PASSWORD";
 
-// Configurable Production Backend URL (Change this to your deployed Render HTTPS backend URL)
-// Example Production: "https://your-habbitt-backend.onrender.com"
-const String BACKEND_BASE_URL = "https://your-habbitt-backend.onrender.com"; 
+// Production Backend URL
+const String BACKEND_BASE_URL = "https://habbitt-backend.onrender.com"; 
 
 // Device Authentication Secret Key (Must match DEVICE_API_KEY in backend environment)
 const char* deviceApiKey = "YOUR_DEVICE_API_KEY_HERE";

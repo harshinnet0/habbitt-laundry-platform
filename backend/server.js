@@ -33,6 +33,10 @@ const parseFrontendUrls = (envUrl) => {
 
 const configuredFrontendUrls = parseFrontendUrls(process.env.FRONTEND_URL);
 
+const defaultProdOrigins = [
+  'https://habbitt-frontend.onrender.com'
+];
+
 const defaultDevOrigins = [
   'http://localhost:5173',
   'http://localhost:3000',
@@ -41,8 +45,8 @@ const defaultDevOrigins = [
 ];
 
 const allowedOrigins = isProduction
-  ? configuredFrontendUrls
-  : Array.from(new Set([...defaultDevOrigins, ...configuredFrontendUrls]));
+  ? Array.from(new Set([...defaultProdOrigins, ...configuredFrontendUrls]))
+  : Array.from(new Set([...defaultDevOrigins, ...defaultProdOrigins, ...configuredFrontendUrls]));
 
 app.use(cors({
   origin: function (origin, callback) {
@@ -133,7 +137,10 @@ const inMemoryStore = {
   }
 };
 
-const MONGODB_URI = process.env.MONGODB_URI;
+// Sanitize MONGODB_URI to remove surrounding quotes or accidental whitespace
+const rawMongoUri = process.env.MONGODB_URI || '';
+const MONGODB_URI = rawMongoUri.trim().replace(/^["']|["']$/g, '').trim();
+
 
 // Auth Middleware
 const authenticate = (req, res, next) => {
