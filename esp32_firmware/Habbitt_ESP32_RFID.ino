@@ -20,8 +20,8 @@
  *    - GND       --> ESP32 GND
  * 
  * Wi-Fi Credentials:
- *    - SSID:     "YOUR_WIFI_SSID"
- *    - Password: "YOUR_WIFI_PASSWORD"
+ *    - SSID:     "realme 12x 5G 9755"
+ *    - Password: "12345678"
  * 
  * Production Deployment Server URL:
  *    - Change BACKEND_BASE_URL to your Render Web Service domain:
@@ -49,8 +49,8 @@
 #define RELAY_OFF (IS_ACTIVE_LOW ? HIGH : LOW)
 
 // --- WI-FI & SERVER CONFIGURATION ---
-const char* ssid = "YOUR_WIFI_SSID";
-const char* password = "YOUR_WIFI_PASSWORD";
+const char* ssid = "realme 12x 5G 9755";
+const char* password = "12345678";
 
 // Production Backend URL
 const String BACKEND_BASE_URL = "https://habbitt-backend.onrender.com"; 
