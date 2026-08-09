@@ -806,6 +806,7 @@ app.post('/api/rfid/scan', deviceOrUserAuth, async (req, res) => {
             status: 'RUNNING',
             activeBookingId: activeBooking.bookingId,
             activeUser: registeredUser.name,
+            activeUserId: registeredUser._id ? registeredUser._id.toString() : String(registeredUser.id),
             lastCardScanned: rawId,
             lastScanTime: new Date(),
             lastScanStatus: 'ACCESS_GRANTED',
@@ -820,6 +821,7 @@ app.post('/api/rfid/scan', deviceOrUserAuth, async (req, res) => {
         status: 'RUNNING',
         activeBookingId: activeBooking.bookingId,
         activeUser: registeredUser.name,
+        activeUserId: registeredUser._id ? registeredUser._id.toString() : String(registeredUser.id),
         lastCardScanned: rawId,
         lastScanTime: new Date(),
         lastScanStatus: 'ACCESS_GRANTED',
@@ -964,65 +966,86 @@ app.post('/api/machine/toggle', authenticate, async (req, res) => {
   try {
     const { relayState } = req.body; // true or false
     const now = new Date();
+    const currentUserId = String(req.user.id);
 
-    let activeBooking = null;
+    let machineDoc = null;
     let registeredUser = null;
+    let userActiveBooking = null;
 
     if (!useInMemory && mongoose.connection.readyState === 1) {
+      machineDoc = await Machine.findOne({ machineId: 'HABBITT-M01' });
       const users = await User.find();
-      registeredUser = users.find(u => u._id.toString() === req.user.id);
+      registeredUser = users.find(u => String(u._id) === currentUserId);
       if (registeredUser) {
         const bookings = await Booking.find({ user: registeredUser._id, paymentStatus: 'PAID' }).sort({ createdAt: -1 });
-        activeBooking = bookings.find(b => {
-          const start = new Date(b.startTime);
-          const end = new Date(b.endTime);
-          return now >= start && now <= end;
-        });
+        userActiveBooking = bookings.find(b => isBookingActiveNow(b, now));
       }
     } else {
-      registeredUser = inMemoryStore.users.find(u => u._id === req.user.id || u.email === req.user.email) || inMemoryStore.users[0];
+      machineDoc = inMemoryStore.machine;
+      registeredUser = inMemoryStore.users.find(u => String(u._id) === currentUserId || u.email === req.user.email) || inMemoryStore.users[0];
       if (registeredUser) {
         const bookings = inMemoryStore.bookings.filter(b => 
           (String(b.user) === String(registeredUser._id) || (b.rfidCardId && registeredUser.rfidCardId && b.rfidCardId.replace(/[^A-F0-9]/g, '') === registeredUser.rfidCardId.replace(/[^A-F0-9]/g, ''))) &&
           b.paymentStatus === 'PAID'
         );
-        activeBooking = bookings.find(b => {
-          const start = new Date(b.startTime);
-          const end = new Date(b.endTime);
-          return now >= start && now <= end;
-        });
+        userActiveBooking = bookings.find(b => isBookingActiveNow(b, now));
       }
     }
 
-    // Security Check when turning ON: Must have active slot AND must have scanned RFID card at least once!
-    if (relayState) {
-      if (!activeBooking) {
-        return res.status(400).json({
-          success: false,
-          message: '❌ No active paid slot found right now! Please book a time slot first.'
-        });
-      }
+    // STRICT USER ID SECURITY CONTROL:
+    // Only the user who owns the active booking slot for right now can manually Turn ON or Turn OFF the machine!
+    
+    // 1. Check if user has an active booking slot right now
+    if (!userActiveBooking) {
+      return res.status(403).json({
+        success: false,
+        message: '❌ Access Denied! Only the user with an active booked time slot can manually control the machine.'
+      });
+    }
 
-      if (activeBooking.relayActivationStatus !== 'ACTIVATED') {
+    // 2. Turning ON Validation: Must have tapped RFID card first
+    if (relayState) {
+      if (userActiveBooking.relayActivationStatus !== 'ACTIVATED') {
         return res.status(400).json({
           success: false,
           message: '🔒 Security Lock: Please tap your physical RFID Card at the machine scanner first to unlock & start your session!'
         });
       }
+    } else {
+      // 3. Turning OFF Validation: Prevent User B from stopping User A's active machine session!
+      if (machineDoc && machineDoc.relayState) {
+        const activeUser = machineDoc.activeUser || 'another user';
+        const activeUserId = machineDoc.activeUserId;
+        if (activeUserId && String(activeUserId) !== currentUserId) {
+          return res.status(403).json({
+            success: false,
+            message: `❌ Access Denied! Machine is currently running under ${activeUser}'s active session. You cannot turn OFF another user's machine!`
+          });
+        }
+      }
     }
 
-    const targetStatus = relayState ? 'RUNNING' : 'PAUSED';
+    const targetStatus = relayState ? 'RUNNING' : 'STANDBY';
 
     if (!useInMemory && mongoose.connection.readyState === 1) {
       const updated = await Machine.findOneAndUpdate(
         { machineId: 'HABBITT-M01' },
-        { relayState: Boolean(relayState), status: targetStatus },
+        {
+          relayState: Boolean(relayState),
+          status: targetStatus,
+          activeBookingId: relayState ? userActiveBooking.bookingId : null,
+          activeUser: relayState ? (registeredUser ? registeredUser.name : 'User') : null,
+          activeUserId: relayState ? currentUserId : null
+        },
         { new: true }
       );
       return res.json(updated);
     } else {
       inMemoryStore.machine.relayState = Boolean(relayState);
       inMemoryStore.machine.status = targetStatus;
+      inMemoryStore.machine.activeBookingId = relayState ? userActiveBooking.bookingId : null;
+      inMemoryStore.machine.activeUser = relayState ? (registeredUser ? registeredUser.name : 'User') : null;
+      inMemoryStore.machine.activeUserId = relayState ? currentUserId : null;
       return res.json(inMemoryStore.machine);
     }
   } catch (err) {

@@ -9,6 +9,7 @@ const machineSchema = new mongoose.Schema({
   status: { type: String, enum: ['IDLE', 'RUNNING', 'MAINTENANCE'], default: 'IDLE' },
   activeBookingId: { type: String, default: null },
   activeUser: { type: String, default: null },
+  activeUserId: { type: String, default: null },
   lastCardScanned: { type: String, default: null },
   lastScanTime: { type: Date, default: null },
   lastScanStatus: { type: String, default: null },
