@@ -919,12 +919,35 @@ app.get('/api/machine/status', async (req, res) => {
       inMemoryStore.machine.status = computedStatus;
     }
 
-    res.json({
-      ...machineObj,
+    const isHardwareOrAdminOrOwner = 
+      Boolean(req.query.esp32) || 
+      Boolean(req.headers['x-device-key']) || 
+      Boolean(req.headers['user-agent']?.includes('ESP32')) ||
+      (req.user && req.user.role === 'admin') ||
+      (req.user && machineObj.activeUserId && String(machineObj.activeUserId) === String(req.user.id));
+
+    if (isHardwareOrAdminOrOwner) {
+      return res.json({
+        ...machineObj,
+        status: computedStatus,
+        isOnline,
+        lastHeartbeat: new Date(lastEsp32Heartbeat).toISOString(),
+        lastHeartbeatSecondsAgo: secondsAgo
+      });
+    }
+
+    // Sanitized response for normal web users (Zero private owner data leaked)
+    return res.json({
+      machineId: machineObj.machineId || 'HABBITT-M01',
+      name: machineObj.name || 'Habbitt Ultra Wash X1',
+      location: machineObj.location || 'Habbitt Laundry Station #1',
+      relayPin: machineObj.relayPin || 4,
+      relayState: Boolean(machineObj.relayState),
       status: computedStatus,
       isOnline,
       lastHeartbeat: new Date(lastEsp32Heartbeat).toISOString(),
-      lastHeartbeatSecondsAgo: secondsAgo
+      lastHeartbeatSecondsAgo: secondsAgo,
+      slotEndTime: machineObj.slotEndTime || null
     });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -1009,18 +1032,19 @@ app.post('/api/machine/toggle', authenticate, async (req, res) => {
 
     // STRICT USER ID SECURITY CONTROL:
     // Only the user who owns the active booking slot for right now can manually Turn ON or Turn OFF the machine!
+    const isAdminUser = req.user && req.user.role === 'admin';
     
-    // 1. Check if user has an active booking slot right now
-    if (!userActiveBooking) {
+    // 1. Check if user has an active booking slot right now (unless admin)
+    if (!userActiveBooking && !isAdminUser) {
       return res.status(403).json({
         success: false,
-        message: '❌ Access Denied! Only the user with an active booked time slot can manually control the machine.'
+        message: 'Machine is currently unavailable. Please try again later.'
       });
     }
 
     // 2. Turning ON Validation: Must have tapped RFID card first
     if (relayState) {
-      if (userActiveBooking.relayActivationStatus !== 'ACTIVATED') {
+      if (userActiveBooking && userActiveBooking.relayActivationStatus !== 'ACTIVATED' && !isAdminUser) {
         return res.status(400).json({
           success: false,
           message: '🔒 Security Lock: Please tap your physical RFID Card at the machine scanner first to unlock & start your session!'
@@ -1028,13 +1052,12 @@ app.post('/api/machine/toggle', authenticate, async (req, res) => {
       }
     } else {
       // 3. Turning OFF Validation: Prevent User B from stopping User A's active machine session!
-      if (machineDoc && machineDoc.relayState) {
-        const activeUser = machineDoc.activeUser || 'another user';
+      if (machineDoc && machineDoc.relayState && !isAdminUser) {
         const activeUserId = machineDoc.activeUserId;
         if (activeUserId && String(activeUserId) !== currentUserId) {
           return res.status(403).json({
             success: false,
-            message: `❌ Access Denied! Machine is currently running under ${activeUser}'s active session. You cannot turn OFF another user's machine!`
+            message: 'Machine is currently unavailable. Please try again later.'
           });
         }
       }
