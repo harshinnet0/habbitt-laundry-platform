@@ -74,8 +74,12 @@ unsigned long lastStatusCheck = 0;
 unsigned long lastWifiRetry = 0;
 
 void setup() {
-  // Disable ESP32 hardware Brownout Detector (prevents brownout reset crashes during Wi-Fi transmission)
+  // Disable ESP32 hardware Brownout Detector (compatible with ESP32 Core 2.x & 3.x)
+#ifdef RTC_CNTL_BROWN_OUT_REG
+  WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
+#elif defined(RTC_CNTL_BROWNOUT_REG)
   WRITE_PERI_REG(RTC_CNTL_BROWNOUT_REG, 0);
+#endif
 
   Serial.begin(9600);
   delay(1000);
