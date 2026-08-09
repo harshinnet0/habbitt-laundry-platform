@@ -131,6 +131,28 @@ export const DashboardPage = () => {
             </div>
           </div>
 
+          {/* Quick Account Metrics Grid - Fills middle space with stats & status */}
+          <div className="grid grid-cols-3 gap-3 p-3 bg-orange-50/60 rounded-2xl border border-orange-100/80">
+            <div className="flex flex-col items-center justify-center text-center p-2 bg-white rounded-xl shadow-xs border border-orange-100">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Bookings</span>
+              <span className="text-base font-extrabold text-orange-600 mt-0.5">{bookings ? bookings.length : 0}</span>
+            </div>
+
+            <div className="flex flex-col items-center justify-center text-center p-2 bg-white rounded-xl shadow-xs border border-orange-100">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Account</span>
+              <span className="text-xs font-extrabold text-emerald-600 flex items-center justify-center gap-1 mt-1">
+                <ShieldCheck className="w-3.5 h-3.5" /> Active
+              </span>
+            </div>
+
+            <div className="flex flex-col items-center justify-center text-center p-2 bg-white rounded-xl shadow-xs border border-orange-100">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">RFID Access</span>
+              <span className="text-xs font-extrabold text-amber-600 flex items-center justify-center gap-1 mt-1">
+                <Zap className="w-3.5 h-3.5" /> Tap Ready
+              </span>
+            </div>
+          </div>
+
           <button
             onClick={() => setCurrentView('book-slot')}
             className="w-full py-3 bg-gradient-to-r from-orange-600 to-amber-500 hover:from-orange-700 hover:to-amber-600 text-white font-extrabold text-sm rounded-2xl shadow-orange-glow flex items-center justify-center gap-2 transition-all hover:scale-[1.01]"
