@@ -56,6 +56,9 @@ const char* password = "12345678";
 // Example Production: "https://your-habbitt-backend.onrender.com"
 const String BACKEND_BASE_URL = "https://your-habbitt-backend.onrender.com"; 
 
+// Device Authentication Secret Key (Must match DEVICE_API_KEY in backend environment)
+const char* deviceApiKey = "YOUR_DEVICE_API_KEY_HERE";
+
 // Dynamic API Endpoints
 String scanUrl   = BACKEND_BASE_URL + "/api/rfid/scan";
 String statusUrl = BACKEND_BASE_URL + "/api/machine/status?esp32=true";
@@ -169,6 +172,7 @@ void verifyRfidWithServer(String uid) {
   }
 
   http.addHeader("Content-Type", "application/json");
+  http.addHeader("X-Device-Key", deviceApiKey);
 
   String jsonPayload = "{\"rfidCardId\":\"" + uid + "\"}";
   Serial.print("📡 Verifying Card with Server: ");
@@ -242,6 +246,7 @@ void checkMachineStatusFromServer() {
     http.begin(statusUrl);
   }
 
+  http.addHeader("X-Device-Key", deviceApiKey);
   http.setTimeout(1500);
 
   int httpCode = http.GET();

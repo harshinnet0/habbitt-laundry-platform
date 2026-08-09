@@ -11,19 +11,50 @@ const Machine = require('./models/Machine');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
-const JWT_SECRET = process.env.JWT_SECRET || 'habbitt_secret_key_2026';
+const isProduction = process.env.NODE_ENV === 'production';
 
-const allowedOrigins = process.env.FRONTEND_URL 
-  ? [process.env.FRONTEND_URL.replace(/\/$/, ''), 'http://localhost:5173', 'http://localhost:3000']
-  : '*';
+let JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET || !JWT_SECRET.trim()) {
+  if (isProduction) {
+    JWT_SECRET = null;
+  } else {
+    console.warn('⚠️ WARNING: JWT_SECRET environment variable is not set. Using development-only fallback secret.');
+    JWT_SECRET = 'habbitt_dev_secret_local_only';
+  }
+}
+
+const parseFrontendUrls = (envUrl) => {
+  if (!envUrl) return [];
+  return envUrl
+    .split(',')
+    .map(url => url.trim().replace(/\/$/, ''))
+    .filter(Boolean);
+};
+
+const configuredFrontendUrls = parseFrontendUrls(process.env.FRONTEND_URL);
+
+const defaultDevOrigins = [
+  'http://localhost:5173',
+  'http://localhost:3000',
+  'http://127.0.0.1:5173',
+  'http://127.0.0.1:3000'
+];
+
+const allowedOrigins = isProduction
+  ? configuredFrontendUrls
+  : Array.from(new Set([...defaultDevOrigins, ...configuredFrontendUrls]));
 
 app.use(cors({
   origin: function (origin, callback) {
+    // Allow requests with no origin (e.g. ESP32 microcontroller, mobile apps, server-to-server)
     if (!origin) return callback(null, true);
-    if (allowedOrigins === '*' || allowedOrigins.includes(origin)) {
+
+    const cleanOrigin = origin.replace(/\/$/, '');
+    if (allowedOrigins.includes(cleanOrigin) || allowedOrigins.includes(origin)) {
       return callback(null, true);
     }
-    return callback(null, true);
+
+    return callback(new Error('Not allowed by CORS'));
   },
   credentials: true
 }));
@@ -102,40 +133,7 @@ const inMemoryStore = {
   }
 };
 
-// Connect MongoDB Atlas using process.env.MONGODB_URI
 const MONGODB_URI = process.env.MONGODB_URI;
-
-if (MONGODB_URI) {
-  console.log('📡 Attempting MongoDB Atlas Connection...');
-  mongoose.connect(MONGODB_URI, { serverSelectionTimeoutMS: 5000 })
-    .then(async () => {
-      console.log('=======================================================');
-      console.log('✅ CONNECTED TO MONGODB ATLAS DATABASE SUCCESSFULLY!');
-      console.log('=======================================================');
-      useInMemory = false;
-      // Initialize Machine record if empty
-      const existing = await Machine.findOne({ machineId: 'HABBITT-M01' });
-      if (!existing) {
-        await Machine.create({
-          machineId: 'HABBITT-M01',
-          name: 'Habbitt Ultra Wash X1',
-          location: 'Habbitt Station #1',
-          relayPin: 4,
-          relayState: false,
-          status: 'IDLE'
-        });
-      }
-    })
-    .catch(err => {
-      console.warn('⚠️ MongoDB Atlas Connection Warning:', err.message);
-      console.warn('💡 Tip: Ensure your server IP / Render environment is allowed in MongoDB Atlas Network Access (0.0.0.0/0).');
-      console.warn('⚡ Operating in In-Memory Database Fallback Mode!');
-      useInMemory = true;
-    });
-} else {
-  console.warn('⚠️ MONGODB_URI environment variable is not set. Operating in In-Memory Fallback Mode.');
-  useInMemory = true;
-}
 
 // Auth Middleware
 const authenticate = (req, res, next) => {
@@ -149,6 +147,40 @@ const authenticate = (req, res, next) => {
   } catch (err) {
     return res.status(401).json({ message: 'Invalid or expired token' });
   }
+};
+
+// Device Authentication Middleware for ESP32 Hardware API calls (or authenticated user simulator calls)
+const deviceOrUserAuth = (req, res, next) => {
+  const deviceKey = process.env.DEVICE_API_KEY;
+  const clientDeviceKey = req.headers['x-device-key'] || req.query.device_key;
+
+  // 1. Valid X-Device-Key header provided by ESP32 microcontroller
+  if (clientDeviceKey && deviceKey && clientDeviceKey.trim() === deviceKey.trim()) {
+    return next();
+  }
+
+  // 2. Valid Authorization Bearer JWT provided by authenticated web application user (Simulator)
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const token = authHeader.split(' ')[1];
+    try {
+      if (JWT_SECRET) {
+        const decoded = jwt.verify(token, JWT_SECRET);
+        req.user = decoded;
+        return next();
+      }
+    } catch (e) {}
+  }
+
+  // 3. Non-production development mode without DEVICE_API_KEY set
+  if (!isProduction && (!deviceKey || !deviceKey.trim())) {
+    return next();
+  }
+
+  return res.status(401).json({
+    success: false,
+    message: 'Unauthorized: Invalid or missing device key (X-Device-Key header required)'
+  });
 };
 
 // Health Check Keep-Alive Endpoint for Render / Cloud Deployments
@@ -453,8 +485,8 @@ app.get('/api/bookings/my-history', authenticate, async (req, res) => {
   }
 });
 
-// Receipt Details by Booking ID
-app.get('/api/bookings/receipt/:id', async (req, res) => {
+// Receipt Details by Booking ID (Protected & User IDOR Ownership Checked)
+app.get('/api/bookings/receipt/:id', authenticate, async (req, res) => {
   try {
     const { id } = req.params;
     let booking = null;
@@ -465,6 +497,18 @@ app.get('/api/bookings/receipt/:id', async (req, res) => {
     }
 
     if (!booking) return res.status(404).json({ message: 'Receipt / Booking not found' });
+
+    // IDOR Ownership check: Authenticated user can only view their own booking receipt
+    const bookingUserId = String(booking.user?._id || booking.user);
+    const reqUserId = String(req.user.id);
+    const isOwner = bookingUserId === reqUserId ||
+      (booking.userPhone && req.user.phone && booking.userPhone === req.user.phone) ||
+      (booking.userEmail && req.user.email && booking.userEmail === req.user.email);
+
+    if (!isOwner) {
+      return res.status(403).json({ message: 'Forbidden: You do not have permission to view this receipt' });
+    }
+
     res.json(booking);
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -477,7 +521,7 @@ app.get('/api/bookings/receipt/:id', async (req, res) => {
 
 // ESP32 RFID Scan Endpoint
 // Receives JSON from ESP32: { "rfidCardId": "2C:4F:6D:05" }
-app.post('/api/rfid/scan', async (req, res) => {
+app.post('/api/rfid/scan', deviceOrUserAuth, async (req, res) => {
   try {
     const rawId = req.body.rfidCardId || req.body.uid || req.body.card_uid;
     console.log(`📡 [ESP32 RFID SCAN EVENT] Card ID scanned: "${rawId}"`);
@@ -692,7 +736,7 @@ let lastEsp32Heartbeat = Date.now();
 // Live Machine Status Endpoint
 app.get('/api/machine/status', async (req, res) => {
   try {
-    if (req.query.esp32 || req.headers['user-agent']?.includes('ESP32')) {
+    if (req.query.esp32 || req.headers['user-agent']?.includes('ESP32') || req.headers['x-device-key']) {
       lastEsp32Heartbeat = Date.now();
     }
 
@@ -875,9 +919,75 @@ app.post('/api/machine/toggle', authenticate, async (req, res) => {
   }
 });
 
-// Start Server
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`=======================================================`);
-  console.log(`🚀 HABBITT SMART LAUNDRY BACKEND RUNNING ON PORT ${PORT}`);
-  console.log(`=======================================================`);
-});
+// Database Connection & Server Initialization
+async function startServer() {
+  // 1. Validate JWT_SECRET in production
+  if (isProduction && (!process.env.JWT_SECRET || !process.env.JWT_SECRET.trim())) {
+    console.error('=======================================================');
+    console.error('❌ FATAL ERROR: JWT_SECRET environment variable is missing in production mode.');
+    console.error('   The server process will exit safely.');
+    console.error('=======================================================');
+    process.exit(1);
+  }
+
+  // 2. Validate MONGODB_URI & Connect to Database
+  if (isProduction && (!MONGODB_URI || !MONGODB_URI.trim())) {
+    console.error('=======================================================');
+    console.error('❌ FATAL ERROR: MONGODB_URI environment variable is missing in production mode.');
+    console.error('   In-memory database fallback is disabled in production.');
+    console.error('   The server process will exit safely.');
+    console.error('=======================================================');
+    process.exit(1);
+  }
+
+  if (MONGODB_URI && MONGODB_URI.trim()) {
+    console.log('📡 Attempting MongoDB Atlas Connection...');
+    try {
+      await mongoose.connect(MONGODB_URI, { serverSelectionTimeoutMS: 5000 });
+      console.log('=======================================================');
+      console.log('✅ CONNECTED TO MONGODB ATLAS DATABASE SUCCESSFULLY!');
+      console.log('=======================================================');
+      useInMemory = false;
+
+      // Initialize Machine record if empty
+      const existing = await Machine.findOne({ machineId: 'HABBITT-M01' });
+      if (!existing) {
+        await Machine.create({
+          machineId: 'HABBITT-M01',
+          name: 'Habbitt Ultra Wash X1',
+          location: 'Habbitt Station #1',
+          relayPin: 4,
+          relayState: false,
+          status: 'IDLE'
+        });
+      }
+    } catch (err) {
+      console.error('=======================================================');
+      console.error('❌ MongoDB Atlas Connection Error:', err.message);
+      console.error('=======================================================');
+
+      if (isProduction) {
+        console.error('❌ FATAL ERROR: Unable to connect to MongoDB Atlas in production mode.');
+        console.error('   In-Memory database fallback is disabled in production.');
+        console.error('   Exiting server process.');
+        process.exit(1);
+      } else {
+        console.warn('💡 Tip: Ensure your server IP / Render environment is allowed in MongoDB Atlas Network Access (0.0.0.0/0).');
+        console.warn('⚡ Operating in In-Memory Database Fallback Mode for local development.');
+        useInMemory = true;
+      }
+    }
+  } else {
+    console.warn('⚠️ MONGODB_URI environment variable is not set. Operating in In-Memory Fallback Mode for local development.');
+    useInMemory = true;
+  }
+
+  // 3. Start Express Server listening on PORT
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`=======================================================`);
+    console.log(`🚀 HABBITT SMART LAUNDRY BACKEND RUNNING ON PORT ${PORT}`);
+    console.log(`=======================================================`);
+  });
+}
+
+startServer();

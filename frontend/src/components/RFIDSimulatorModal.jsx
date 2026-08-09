@@ -4,7 +4,7 @@ import { API_BASE_URL } from '../config/api';
 import { Radio, CheckCircle2, XCircle, Zap, ShieldCheck, Loader2, X } from 'lucide-react';
 
 export const RFIDSimulatorModal = ({ isOpen, onClose }) => {
-  const { user } = useContext(AuthContext);
+  const { user, token } = useContext(AuthContext);
   const [testCardId, setTestCardId] = useState(user ? user.rfidCardId : 'A3:B4:5C:D6');
   const [loading, setLoading] = useState(false);
   const [scanResult, setScanResult] = useState(null);
@@ -17,9 +17,12 @@ export const RFIDSimulatorModal = ({ isOpen, onClose }) => {
     setScanResult(null);
 
     try {
+      const headers = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
       const res = await fetch(`${API_BASE_URL}/api/rfid/scan`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({ rfidCardId: idToUse })
       });
 
