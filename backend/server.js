@@ -468,7 +468,9 @@ app.post('/api/bookings/create', authenticate, async (req, res) => {
         if (modifier === 'PM' && hours < 12) hours += 12;
         if (modifier === 'AM' && hours === 12) hours = 0;
         const [year, month, day] = bookingDate.split('-').map(Number);
-        return new Date(year, month - 1, day, hours, minutes || 0, 0, 0);
+        const pad = (n) => String(n).padStart(2, '0');
+        const isoStr = `${year}-${pad(month)}-${pad(day)}T${pad(hours)}:${pad(minutes || 0)}:00+05:30`;
+        return new Date(isoStr);
       };
 
       try {
@@ -583,6 +585,67 @@ app.get('/api/bookings/receipt/:id', authenticate, async (req, res) => {
 // 3. ESP32 RFID HARDWARE & MACHINE CONTROLLER ROUTES
 // -------------------------------------------------------------
 
+// Helper to validate active booking slot with timezone resilience (supports IST India Standard Time)
+const isBookingActiveNow = (b, now) => {
+  if (!b) return false;
+
+  // 1. Direct JavaScript Date comparison (with 10-min buffer before start)
+  const start = new Date(b.startTime);
+  const end   = new Date(b.endTime);
+  const bufferBefore = new Date(start.getTime() - 10 * 60 * 1000);
+  if (now >= bufferBefore && now <= end) {
+    return true;
+  }
+
+  // 2. Check if booking startTime was stored without IST timezone offset (shift by -5.5 hours)
+  const startShifted  = new Date(start.getTime() - 330 * 60 * 1000);
+  const endShifted    = new Date(end.getTime() - 330 * 60 * 1000);
+  const bufferShifted = new Date(startShifted.getTime() - 10 * 60 * 1000);
+  if (now >= bufferShifted && now <= endShifted) {
+    return true;
+  }
+
+  // 3. IST Time & Date String Matcher (Fallback for slots formatted like "03:00 PM - 04:00 PM")
+  try {
+    const istDateString = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+    const istTimeStr    = now.toLocaleTimeString('en-US', { timeZone: 'Asia/Kolkata', hour12: false });
+    const [currentHour, currentMin] = istTimeStr.split(':').map(Number);
+    const nowTotalMins  = currentHour * 60 + currentMin;
+
+    const bDate = b.date ? String(b.date).trim() : '';
+    if (bDate === istDateString && b.timeSlot) {
+      const parts = String(b.timeSlot).split(' - ');
+      const parseSlotTime = (tStr) => {
+        const cleanStr = tStr.replace(/^[^\d]*/, '').trim();
+        const spaceIdx = cleanStr.lastIndexOf(' ');
+        if (spaceIdx === -1) return null;
+        const timePart = cleanStr.substring(0, spaceIdx);
+        const modifier = cleanStr.substring(spaceIdx + 1).toUpperCase();
+        let [h, m] = timePart.split(':').map(Number);
+        if (modifier === 'PM' && h < 12) h += 12;
+        if (modifier === 'AM' && h === 12) h = 0;
+        return { hour: h, minute: m || 0 };
+      };
+
+      const startObj = parseSlotTime(parts[0]);
+      if (startObj) {
+        let endObj = parts[1] ? parseSlotTime(parts[1]) : null;
+        if (!endObj) endObj = { hour: (startObj.hour + 1) % 24, minute: startObj.minute };
+
+        const startTotalMins = startObj.hour * 60 + startObj.minute - 10;
+        let endTotalMins = endObj.hour * 60 + endObj.minute;
+        if (endTotalMins < startTotalMins) endTotalMins += 24 * 60;
+
+        if (nowTotalMins >= startTotalMins && nowTotalMins <= endTotalMins) {
+          return true;
+        }
+      }
+    }
+  } catch (e) {}
+
+  return false;
+};
+
 // ESP32 RFID Scan Endpoint
 // Receives JSON from ESP32: { "rfidCardId": "2C:4F:6D:05" }
 app.post('/api/rfid/scan', deviceOrUserAuth, async (req, res) => {
@@ -611,12 +674,7 @@ app.post('/api/rfid/scan', deviceOrUserAuth, async (req, res) => {
 
       if (registeredUser) {
         const userBookings = await Booking.find({ user: registeredUser._id, paymentStatus: 'PAID' }).sort({ createdAt: -1 });
-        activeBooking = userBookings.find(b => {
-          const start = new Date(b.startTime);
-          const end   = new Date(b.endTime);
-          const bufferBefore = new Date(start.getTime() - 10 * 60 * 1000);
-          return now >= bufferBefore && now <= end;
-        });
+        activeBooking = userBookings.find(b => isBookingActiveNow(b, now));
       }
 
       // Fallback: Check if any active booking explicitly was assigned this card ID
@@ -625,10 +683,7 @@ app.post('/api/rfid/scan', deviceOrUserAuth, async (req, res) => {
         activeBooking = paidBookings.find(b => {
           const bCard = b.rfidCardId ? b.rfidCardId.replace(/[^A-F0-9]/g, '') : '';
           if (bCard !== cleanedScanId) return false;
-          const start = new Date(b.startTime);
-          const end   = new Date(b.endTime);
-          const bufferBefore = new Date(start.getTime() - 10 * 60 * 1000);
-          return now >= bufferBefore && now <= end;
+          return isBookingActiveNow(b, now);
         });
         if (activeBooking && !registeredUser) {
           registeredUser = await User.findById(activeBooking.user);
@@ -645,12 +700,7 @@ app.post('/api/rfid/scan', deviceOrUserAuth, async (req, res) => {
           (String(b.user) === String(registeredUser._id) || (b.rfidCardId && b.rfidCardId.replace(/[^A-F0-9]/g, '') === cleanedScanId)) &&
           b.paymentStatus === 'PAID'
         );
-        activeBooking = userBookings.find(b => {
-          const start = new Date(b.startTime);
-          const end   = new Date(b.endTime);
-          const bufferBefore = new Date(start.getTime() - 10 * 60 * 1000);
-          return now >= bufferBefore && now <= end;
-        });
+        activeBooking = userBookings.find(b => isBookingActiveNow(b, now));
       }
 
       // Fallback: Check bookings explicitly matching rfidCardId
@@ -659,10 +709,7 @@ app.post('/api/rfid/scan', deviceOrUserAuth, async (req, res) => {
           if (b.paymentStatus !== 'PAID') return false;
           const bCard = b.rfidCardId ? b.rfidCardId.replace(/[^A-F0-9]/g, '') : '';
           if (bCard !== cleanedScanId) return false;
-          const start = new Date(b.startTime);
-          const end   = new Date(b.endTime);
-          const bufferBefore = new Date(start.getTime() - 10 * 60 * 1000);
-          return now >= bufferBefore && now <= end;
+          return isBookingActiveNow(b, now);
         });
         if (matchingBooking) {
           activeBooking = matchingBooking;
