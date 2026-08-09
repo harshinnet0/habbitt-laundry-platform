@@ -1038,7 +1038,7 @@ app.post('/api/machine/toggle', authenticate, async (req, res) => {
     if (!userActiveBooking && !isAdminUser) {
       return res.status(403).json({
         success: false,
-        message: 'Machine is currently unavailable. Please try again later.'
+        message: "🔒 Access Denied: Another user is currently using this machine. You cannot control or stop someone else's active wash session!"
       });
     }
 
@@ -1057,7 +1057,7 @@ app.post('/api/machine/toggle', authenticate, async (req, res) => {
         if (activeUserId && String(activeUserId) !== currentUserId) {
           return res.status(403).json({
             success: false,
-            message: 'Machine is currently unavailable. Please try again later.'
+            message: "🔒 Access Denied: Another user is currently using this machine. You cannot stop someone else's active wash session!"
           });
         }
       }
