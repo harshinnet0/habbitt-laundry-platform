@@ -36,8 +36,8 @@ export const LoginPage = () => {
   };
 
   return (
-    <div className="min-h-[calc(100vh-80px)] flex items-center justify-center p-4 sm:p-6 bg-slate-50">
-      <div className="bg-white rounded-3xl max-w-md w-full p-8 sm:p-10 shadow-soft border border-orange-100">
+    <div className="min-h-[calc(100vh-80px)] flex items-center justify-center p-3 sm:p-6 bg-slate-50 w-full overflow-x-hidden">
+      <div className="bg-white rounded-3xl max-w-md w-full p-5 sm:p-10 shadow-soft border border-orange-100">
         
         {/* Header */}
         <div className="text-center mb-8">

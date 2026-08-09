@@ -14,7 +14,7 @@ function MainApp() {
   const [isRfidSimulatorOpen, setIsRfidSimulatorOpen] = useState(false);
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col selection:bg-orange-500 selection:text-white">
+    <div className="min-h-screen bg-slate-50 flex flex-col selection:bg-orange-500 selection:text-white max-w-full overflow-x-hidden">
       
       {/* Top Navigation */}
       <Navbar onOpenRfidSimulator={() => setIsRfidSimulatorOpen(true)} />

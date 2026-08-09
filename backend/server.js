@@ -211,44 +211,53 @@ app.get('/api/health', (req, res) => {
 // Register
 app.post('/api/auth/register', async (req, res) => {
   try {
-    const { name, email, phone, password, rfidCardId } = req.body;
+    const { name, email, phone, password, rfidCardId, role } = req.body;
     if (!name || !email || !phone || !password || !rfidCardId) {
       return res.status(400).json({ message: 'All fields are required including RFID Card ID' });
     }
 
     const cleanRfid = rfidCardId.trim().toUpperCase().replace(/\s+/g, ':');
+    const userRole = role === 'admin' ? 'admin' : 'user';
 
     if (!useInMemory && mongoose.connection.readyState === 1) {
-      const existingUser = await User.findOne({ email });
+      const existingUser = await User.findOne({ email: email.toLowerCase().trim() });
       if (existingUser) return res.status(400).json({ message: 'Email already registered' });
+
+      const existingRfid = await User.findOne({ rfidCardId: cleanRfid });
+      if (existingRfid) return res.status(400).json({ message: `RFID Card [${cleanRfid}] is already assigned to another user account.` });
 
       const hashedPassword = await bcrypt.hash(password, 8);
       const newUser = await User.create({
-        name,
-        email,
-        phone,
+        name: name.trim(),
+        email: email.toLowerCase().trim(),
+        phone: phone.trim(),
         password: hashedPassword,
-        rfidCardId: cleanRfid
+        rfidCardId: cleanRfid,
+        role: userRole
       });
 
-      const token = jwt.sign({ id: newUser._id, email: newUser.email, name: newUser.name }, JWT_SECRET);
-      return res.json({ token, user: { id: newUser._id, name, email, phone, rfidCardId: cleanRfid } });
+      const token = jwt.sign({ id: newUser._id, email: newUser.email, name: newUser.name, role: newUser.role }, JWT_SECRET);
+      return res.json({ token, user: { id: newUser._id, name: newUser.name, email: newUser.email, phone: newUser.phone, rfidCardId: cleanRfid, role: newUser.role } });
     } else {
-      const existing = inMemoryStore.users.find(u => u.email === email);
+      const existing = inMemoryStore.users.find(u => u.email === email.toLowerCase().trim());
       if (existing) return res.status(400).json({ message: 'Email already registered' });
+
+      const existingRfid = inMemoryStore.users.find(u => u.rfidCardId === cleanRfid);
+      if (existingRfid) return res.status(400).json({ message: `RFID Card [${cleanRfid}] is already assigned to another user account.` });
 
       const newUser = {
         _id: 'u_' + Date.now(),
-        name,
-        email,
-        phone,
+        name: name.trim(),
+        email: email.toLowerCase().trim(),
+        phone: phone.trim(),
         password: bcrypt.hashSync(password, 8),
         rfidCardId: cleanRfid,
+        role: userRole,
         createdAt: new Date()
       };
       inMemoryStore.users.push(newUser);
-      const token = jwt.sign({ id: newUser._id, email: newUser.email, name: newUser.name }, JWT_SECRET);
-      return res.json({ token, user: { id: newUser._id, name, email, phone, rfidCardId: cleanRfid } });
+      const token = jwt.sign({ id: newUser._id, email: newUser.email, name: newUser.name, role: newUser.role }, JWT_SECRET);
+      return res.json({ token, user: { id: newUser._id, name: newUser.name, email: newUser.email, phone: newUser.phone, rfidCardId: cleanRfid, role: newUser.role } });
     }
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -263,11 +272,13 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(400).json({ message: 'Email/Phone and Password required' });
     }
 
+    const cleanIdentifier = identifier.trim().toLowerCase();
     let userObj = null;
+
     if (!useInMemory && mongoose.connection.readyState === 1) {
-      userObj = await User.findOne({ $or: [{ email: identifier }, { phone: identifier }] });
+      userObj = await User.findOne({ $or: [{ email: cleanIdentifier }, { phone: identifier.trim() }] });
     } else {
-      userObj = inMemoryStore.users.find(u => u.email === identifier || u.phone === identifier);
+      userObj = inMemoryStore.users.find(u => u.email === cleanIdentifier || u.phone === identifier.trim());
     }
 
     if (!userObj) return res.status(400).json({ message: 'User not found. Please register.' });
@@ -275,7 +286,7 @@ app.post('/api/auth/login', async (req, res) => {
     const isMatch = await bcrypt.compare(password, userObj.password);
     if (!isMatch) return res.status(400).json({ message: 'Incorrect password' });
 
-    const token = jwt.sign({ id: userObj._id, email: userObj.email, name: userObj.name }, JWT_SECRET);
+    const token = jwt.sign({ id: userObj._id, email: userObj.email, name: userObj.name, role: userObj.role || 'user' }, JWT_SECRET);
     return res.json({
       token,
       user: {
@@ -283,7 +294,8 @@ app.post('/api/auth/login', async (req, res) => {
         name: userObj.name,
         email: userObj.email,
         phone: userObj.phone,
-        rfidCardId: userObj.rfidCardId
+        rfidCardId: userObj.rfidCardId,
+        role: userObj.role || 'user'
       }
     });
   } catch (err) {
@@ -298,7 +310,7 @@ app.get('/api/auth/profile', authenticate, async (req, res) => {
     if (!useInMemory && mongoose.connection.readyState === 1) {
       userObj = await User.findById(req.user.id).select('-password');
     } else {
-      userObj = inMemoryStore.users.find(u => u._id === req.user.id);
+      userObj = inMemoryStore.users.find(u => String(u._id) === String(req.user.id));
     }
     if (!userObj) return res.status(404).json({ message: 'User not found' });
     res.json(userObj);
@@ -315,11 +327,20 @@ app.put('/api/auth/update-rfid', authenticate, async (req, res) => {
     const cleanRfid = rfidCardId.trim().toUpperCase();
 
     if (!useInMemory && mongoose.connection.readyState === 1) {
+      const existingRfid = await User.findOne({ rfidCardId: cleanRfid, _id: { $ne: req.user.id } });
+      if (existingRfid) {
+        return res.status(400).json({ message: `RFID Card [${cleanRfid}] is already assigned to another user account.` });
+      }
       const user = await User.findByIdAndUpdate(req.user.id, { rfidCardId: cleanRfid }, { new: true }).select('-password');
+      if (!user) return res.status(404).json({ message: 'User not found' });
       return res.json({ message: 'RFID Card updated successfully', user });
     } else {
-      let user = inMemoryStore.users.find(u => u._id === req.user.id || u.email === req.user.email);
-      if (!user) user = inMemoryStore.users[0];
+      const existingRfid = inMemoryStore.users.find(u => u.rfidCardId === cleanRfid && String(u._id) !== String(req.user.id));
+      if (existingRfid) {
+        return res.status(400).json({ message: `RFID Card [${cleanRfid}] is already assigned to another user account.` });
+      }
+      let user = inMemoryStore.users.find(u => String(u._id) === String(req.user.id));
+      if (!user) return res.status(404).json({ message: 'User not found' });
       user.rfidCardId = cleanRfid;
       return res.json({ message: 'RFID Card updated successfully', user });
     }
@@ -436,7 +457,7 @@ app.post('/api/bookings/create', authenticate, async (req, res) => {
       }
     }
     if (!userObj) {
-      userObj = inMemoryStore.users.find(u => u._id === req.user.id || u.email === req.user.email) || inMemoryStore.users[0];
+      userObj = inMemoryStore.users.find(u => String(u._id) === String(req.user.id) || u.email === req.user.email);
     }
 
     if (!userObj) return res.status(404).json({ message: 'User not found' });
@@ -530,20 +551,14 @@ app.post('/api/bookings/create', authenticate, async (req, res) => {
   }
 });
 
-// My Bookings
+// My Bookings (Strict Authenticated User Isolation)
 app.get('/api/bookings/my-history', authenticate, async (req, res) => {
   try {
     let bookings = [];
     if (!useInMemory && mongoose.connection.readyState === 1) {
-      bookings = await Booking.find({ $or: [{ user: req.user.id }, { rfidCardId: req.user.rfidCardId }] }).sort({ createdAt: -1 });
+      bookings = await Booking.find({ user: req.user.id }).sort({ createdAt: -1 });
     } else {
-      bookings = inMemoryStore.bookings.filter(b => 
-        String(b.user) === String(req.user.id) || 
-        b.user === 'u1' ||
-        (b.userPhone && req.user.phone && b.userPhone === req.user.phone) ||
-        (b.rfidCardId && req.user.rfidCardId && b.rfidCardId.replace(/[^A-F0-9]/g, '') === req.user.rfidCardId.replace(/[^A-F0-9]/g, '')) ||
-        true
-      );
+      bookings = inMemoryStore.bookings.filter(b => String(b.user) === String(req.user.id));
     }
     res.json(bookings);
   } catch (err) {

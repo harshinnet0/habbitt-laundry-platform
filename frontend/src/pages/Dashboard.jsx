@@ -106,49 +106,49 @@ export const DashboardPage = () => {
   const isOffline = machineStatus?.status === 'OFFLINE' || machineStatus?.isOnline === false;
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-6 space-y-6">
+    <div className="w-full max-w-4xl mx-auto px-3 sm:px-4 py-4 sm:py-6 space-y-4 sm:space-y-6 overflow-x-hidden">
       
       {/* Top Grid: User Profile (Left) & Compact Machine Status Widget (Right) */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-5">
         
         {/* User Profile Details (Left 2 columns) */}
-        <div className="md:col-span-2 bg-white rounded-3xl p-6 shadow-soft border border-orange-100 flex flex-col justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-orange-600 to-amber-500 text-white flex items-center justify-center font-extrabold text-xl shadow-orange-glow flex-shrink-0">
+        <div className="md:col-span-2 bg-white rounded-2xl sm:rounded-3xl p-4 sm:p-6 shadow-soft border border-orange-100 flex flex-col justify-between gap-3 sm:gap-4 overflow-hidden">
+          <div className="flex items-center gap-3 sm:gap-4">
+            <div className="w-11 h-11 sm:w-14 sm:h-14 rounded-xl sm:rounded-2xl bg-gradient-to-tr from-orange-600 to-amber-500 text-white flex items-center justify-center font-extrabold text-lg sm:text-xl shadow-orange-glow shrink-0">
               {user?.name ? user.name.charAt(0).toUpperCase() : 'U'}
             </div>
-            <div>
-              <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">
+            <div className="min-w-0 flex-1">
+              <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight truncate">
                 {user?.name || 'User Profile'}
               </h1>
-              <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-500 mt-0.5">
-                <span className="flex items-center gap-1"><Phone className="w-3.5 h-3.5 text-orange-600" /> {user?.phone || 'No phone'}</span>
-                <span className="text-slate-300">•</span>
-                <span className="flex items-center gap-1 font-mono text-orange-600 bg-orange-50 px-2 py-0.5 rounded border border-orange-200">
-                  <CreditCard className="w-3.5 h-3.5" /> Card: {user?.rfidCardId || 'N/A'}
+              <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 text-xs font-semibold text-slate-500 mt-0.5">
+                <span className="flex items-center gap-1"><Phone className="w-3 h-3 text-orange-600 shrink-0" /> {user?.phone || 'No phone'}</span>
+                <span className="text-slate-300 hidden xs:inline">•</span>
+                <span className="flex items-center gap-1 font-mono text-[11px] sm:text-xs text-orange-600 bg-orange-50 px-1.5 py-0.5 rounded border border-orange-200 truncate">
+                  <CreditCard className="w-3 h-3 shrink-0" /> Card: {user?.rfidCardId || 'N/A'}
                 </span>
               </div>
             </div>
           </div>
 
-          {/* Quick Account Metrics Grid - Fills middle space with stats & status */}
-          <div className="grid grid-cols-3 gap-3 p-3 bg-orange-50/60 rounded-2xl border border-orange-100/80">
-            <div className="flex flex-col items-center justify-center text-center p-2 bg-white rounded-xl shadow-xs border border-orange-100">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Bookings</span>
-              <span className="text-base font-extrabold text-orange-600 mt-0.5">{bookings ? bookings.length : 0}</span>
+          {/* Quick Account Metrics Grid */}
+          <div className="grid grid-cols-3 gap-1.5 sm:gap-3 p-2 sm:p-3 bg-orange-50/60 rounded-xl sm:rounded-2xl border border-orange-100/80">
+            <div className="flex flex-col items-center justify-center text-center p-1.5 sm:p-2 bg-white rounded-lg sm:rounded-xl shadow-xs border border-orange-100 min-w-0">
+              <span className="text-[9px] sm:text-[10px] font-bold uppercase tracking-wider text-slate-400 truncate w-full">Bookings</span>
+              <span className="text-sm sm:text-base font-extrabold text-orange-600 mt-0.5">{bookings ? bookings.length : 0}</span>
             </div>
 
-            <div className="flex flex-col items-center justify-center text-center p-2 bg-white rounded-xl shadow-xs border border-orange-100">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Account</span>
-              <span className="text-xs font-extrabold text-emerald-600 flex items-center justify-center gap-1 mt-1">
-                <ShieldCheck className="w-3.5 h-3.5" /> Active
+            <div className="flex flex-col items-center justify-center text-center p-1.5 sm:p-2 bg-white rounded-lg sm:rounded-xl shadow-xs border border-orange-100 min-w-0">
+              <span className="text-[9px] sm:text-[10px] font-bold uppercase tracking-wider text-slate-400 truncate w-full">Account</span>
+              <span className="text-[11px] sm:text-xs font-extrabold text-emerald-600 flex items-center justify-center gap-0.5 sm:gap-1 mt-0.5 sm:mt-1">
+                <ShieldCheck className="w-3 h-3 sm:w-3.5 sm:h-3.5 shrink-0" /> Active
               </span>
             </div>
 
-            <div className="flex flex-col items-center justify-center text-center p-2 bg-white rounded-xl shadow-xs border border-orange-100">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">RFID Access</span>
-              <span className="text-xs font-extrabold text-amber-600 flex items-center justify-center gap-1 mt-1">
-                <Zap className="w-3.5 h-3.5" /> Tap Ready
+            <div className="flex flex-col items-center justify-center text-center p-1.5 sm:p-2 bg-white rounded-lg sm:rounded-xl shadow-xs border border-orange-100 min-w-0">
+              <span className="text-[9px] sm:text-[10px] font-bold uppercase tracking-wider text-slate-400 truncate w-full">RFID Access</span>
+              <span className="text-[11px] sm:text-xs font-extrabold text-amber-600 flex items-center justify-center gap-0.5 sm:gap-1 mt-0.5 sm:mt-1">
+                <Zap className="w-3 h-3 sm:w-3.5 sm:h-3.5 shrink-0" /> Tap Ready
               </span>
             </div>
           </div>
