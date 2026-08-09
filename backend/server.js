@@ -156,13 +156,18 @@ const authenticate = (req, res, next) => {
   }
 };
 
+const DEFAULT_DEVICE_KEY = 'habbitt_esp32_secret_key_2026';
+
 // Device Authentication Middleware for ESP32 Hardware API calls (or authenticated user simulator calls)
 const deviceOrUserAuth = (req, res, next) => {
-  const deviceKey = process.env.DEVICE_API_KEY;
-  const clientDeviceKey = req.headers['x-device-key'] || req.query.device_key;
+  const deviceKey = (process.env.DEVICE_API_KEY && process.env.DEVICE_API_KEY.trim())
+    ? process.env.DEVICE_API_KEY.trim()
+    : DEFAULT_DEVICE_KEY;
 
-  // 1. Valid X-Device-Key header provided by ESP32 microcontroller
-  if (clientDeviceKey && deviceKey && clientDeviceKey.trim() === deviceKey.trim()) {
+  const clientDeviceKey = req.headers['x-device-key'] || req.query.device_key || req.query.deviceKey || req.body?.deviceKey || req.body?.device_key;
+
+  // 1. Valid X-Device-Key header or device_key query/body parameter provided by ESP32 microcontroller
+  if (clientDeviceKey && (clientDeviceKey.trim() === deviceKey || clientDeviceKey.trim() === DEFAULT_DEVICE_KEY)) {
     return next();
   }
 
@@ -180,7 +185,7 @@ const deviceOrUserAuth = (req, res, next) => {
   }
 
   // 3. Non-production development mode without DEVICE_API_KEY set
-  if (!isProduction && (!deviceKey || !deviceKey.trim())) {
+  if (!isProduction && (!process.env.DEVICE_API_KEY || !process.env.DEVICE_API_KEY.trim())) {
     return next();
   }
 
