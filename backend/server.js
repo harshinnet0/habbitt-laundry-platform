@@ -327,29 +327,61 @@ app.put('/api/auth/update-rfid', authenticate, async (req, res) => {
 // 2. SLOT BOOKING & PAYMENT ROUTES
 // -------------------------------------------------------------
 
-// Helper to generate dynamic 2-minute time slots for testing mode
-const get2MinTestingSlots = () => {
+// Helper to generate dynamic 1-hour time slots for target date in IST (Asia/Kolkata)
+const getHourlySlotsForDate = (targetDateStr) => {
   const slots = [];
   const now = new Date();
-  const baseMinutes = Math.floor(now.getMinutes() / 2) * 2;
-  const baseTime = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), baseMinutes);
+  
+  // Format current date in IST format (YYYY-MM-DD)
+  const istDateStr = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+  const isToday = targetDateStr === istDateStr;
 
-  for (let i = 0; i < 12; i++) {
-    const start = new Date(baseTime.getTime() + i * 2 * 60 * 1000);
-    const end = new Date(start.getTime() + 2 * 60 * 1000);
-    const sStr = start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    const eStr = end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    slots.push(`${sStr} - ${eStr}`);
+  // Get current IST hour (0-23) & minute
+  const istHourStr = now.toLocaleTimeString('en-US', { timeZone: 'Asia/Kolkata', hour12: false, hour: '2-digit' });
+  const currentIstHour = parseInt(istHourStr, 10);
+  const istMinStr = now.toLocaleTimeString('en-US', { timeZone: 'Asia/Kolkata', hour12: false, minute: '2-digit' });
+  const currentIstMin = parseInt(istMinStr, 10);
+
+  // Generate 1-hour slots from 06:00 AM (hour 6) to 11:00 PM (hour 23)
+  for (let hour = 6; hour < 23; hour++) {
+    const startHour12 = hour % 12 === 0 ? 12 : hour % 12;
+    const startAmPm = hour < 12 ? 'AM' : 'PM';
+    const endHour24 = hour + 1;
+    const endHour12 = endHour24 % 12 === 0 ? 12 : endHour24 % 12;
+    const endAmPm = endHour24 < 12 ? 'AM' : 'PM';
+
+    const sStr = `${String(startHour12).padStart(2, '0')}:00 ${startAmPm}`;
+    const eStr = `${String(endHour12).padStart(2, '0')}:00 ${endAmPm}`;
+    const timeSlotLabel = `${sStr} - ${eStr}`;
+
+    // Slot is past if selected date is today and slot end hour is <= current IST hour
+    const isPast = isToday && (endHour24 <= currentIstHour);
+
+    slots.push({
+      timeSlot: timeSlotLabel,
+      hour: hour,
+      isPast: isPast
+    });
   }
-  return slots;
+
+  // Quick 2-minute test slot starting right now in IST for instant hardware testing
+  const now12Hour = currentIstHour % 12 === 0 ? 12 : currentIstHour % 12;
+  const nowAmPm = currentIstHour < 12 ? 'AM' : 'PM';
+  const startMinStr = String(currentIstMin).padStart(2, '0');
+  const endMinStr = String((currentIstMin + 2) % 60).padStart(2, '0');
+  const quickTestSlotLabel = `⚡ Quick Test (${String(now12Hour).padStart(2, '0')}:${startMinStr} ${nowAmPm} - 2 Mins)`;
+
+  return { hourlySlots: slots, quickTestSlot: quickTestSlotLabel, isToday };
 };
 
 // Available slots for a date
 app.get('/api/slots/available', async (req, res) => {
   const { date } = req.query;
-  const targetDate = date || new Date().toISOString().split('T')[0];
+  const now = new Date();
+  const istDateStr = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+  const targetDate = date || istDateStr;
 
-  const currentTestingSlots = get2MinTestingSlots();
+  const { hourlySlots, quickTestSlot, isToday } = getHourlySlotsForDate(targetDate);
 
   let bookedSlots = [];
   if (!useInMemory && mongoose.connection.readyState === 1) {
@@ -361,11 +393,25 @@ app.get('/api/slots/available', async (req, res) => {
       .map(b => b.timeSlot);
   }
 
-  const slotList = currentTestingSlots.map(slot => ({
-    timeSlot: slot,
-    isAvailable: !bookedSlots.some(b => b && b.includes(slot)),
-    price: 60
-  }));
+  const slotList = hourlySlots.map(slotObj => {
+    const isBooked = bookedSlots.some(b => b && b.includes(slotObj.timeSlot));
+    const isAvailable = !isBooked && !slotObj.isPast;
+    return {
+      timeSlot: slotObj.timeSlot,
+      isAvailable: isAvailable,
+      isPast: slotObj.isPast,
+      price: 60
+    };
+  });
+
+  // Include Quick Test Slot at top
+  if (isToday) {
+    slotList.unshift({
+      timeSlot: quickTestSlot,
+      isAvailable: true,
+      price: 0
+    });
+  }
 
   res.json({ date: targetDate, slots: slotList });
 });
@@ -396,8 +442,8 @@ app.post('/api/bookings/create', authenticate, async (req, res) => {
       const now = new Date();
       startTime = now;
       endTime = new Date(now.getTime() + minutes * 60 * 1000);
-      bookingDate = now.toISOString().split('T')[0];
-      const timeString = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      bookingDate = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+      const timeString = now.toLocaleTimeString('en-US', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' });
       finalSlotName = `Slot (${minutes} Mins - Started ${timeString})`;
     } else {
       if (!date || !timeSlot) {
@@ -406,10 +452,10 @@ app.post('/api/bookings/create', authenticate, async (req, res) => {
       bookingDate = date;
       finalSlotName = timeSlot;
 
-      // Parse start and end time for 2-minute slot
+      // Parse start and end time for 1-hour or 2-minute slot
       const parts = timeSlot.split(' - ');
       const parseTime = (timeStr) => {
-        const cleanStr = timeStr.trim();
+        const cleanStr = timeStr.replace(/^[^\d]*/, '').trim();
         const spaceIdx = cleanStr.lastIndexOf(' ');
         const timePart = cleanStr.substring(0, spaceIdx);
         const modifier = cleanStr.substring(spaceIdx + 1).toUpperCase();
@@ -417,16 +463,22 @@ app.post('/api/bookings/create', authenticate, async (req, res) => {
         if (modifier === 'PM' && hours < 12) hours += 12;
         if (modifier === 'AM' && hours === 12) hours = 0;
         const [year, month, day] = bookingDate.split('-').map(Number);
-        return new Date(year, month - 1, day, hours, minutes, 0, 0);
+        return new Date(year, month - 1, day, hours, minutes || 0, 0, 0);
       };
 
       try {
         startTime = parseTime(parts[0]);
-        endTime = new Date(startTime.getTime() + 2 * 60 * 1000); // 2 Minutes Duration
+        if (parts[1] && parts[1].includes('Mins')) {
+          endTime = new Date(startTime.getTime() + 2 * 60 * 1000);
+        } else if (parts[1]) {
+          endTime = parseTime(parts[1]);
+        } else {
+          endTime = new Date(startTime.getTime() + 60 * 60 * 1000); // 1 Hour Default
+        }
       } catch (e) {
         const now = new Date();
         startTime = now;
-        endTime = new Date(now.getTime() + 2 * 60 * 1000);
+        endTime = new Date(now.getTime() + 60 * 60 * 1000);
       }
     }
 

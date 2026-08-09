@@ -36,6 +36,10 @@
 #include <MFRC522.h>
 #include <ArduinoJson.h>
 
+// ESP32 Hardware Power Management Headers (Disables Brownout Reset during Wi-Fi transmit spikes)
+#include "soc/soc.h"
+#include "soc/rtc_cntl_reg.h"
+
 // --- PIN DEFINITIONS ---
 #define SS_PIN    5
 #define RST_PIN   21
@@ -67,8 +71,12 @@ MFRC522 rfid(SS_PIN, RST_PIN);
 
 bool currentRelayState = false;
 unsigned long lastStatusCheck = 0;
+unsigned long lastWifiRetry = 0;
 
 void setup() {
+  // Disable ESP32 hardware Brownout Detector (prevents brownout reset crashes during Wi-Fi transmission)
+  WRITE_PERI_REG(RTC_CNTL_BROWNOUT_REG, 0);
+
   Serial.begin(9600);
   delay(1000);
 
@@ -87,14 +95,18 @@ void setup() {
   delay(100);
   Serial.println("✅ MFRC522 RFID Reader Initialized!");
 
+  // Wi-Fi RF Power Optimization (reduces current draw spikes on USB 5V/3.3V power rail)
+  WiFi.mode(WIFI_STA);
+  WiFi.setTxPower(WIFI_POWER_15dBm);
+
   // Connect to Wi-Fi
   Serial.print("📶 Connecting to Wi-Fi SSID: ");
   Serial.println(ssid);
   WiFi.begin(ssid, password);
 
   int attempts = 0;
-  while (WiFi.status() != WL_CONNECTED && attempts < 30) {
-    delay(500);
+  while (WiFi.status() != WL_CONNECTED && attempts < 25) {
+    delay(400);
     Serial.print(".");
     attempts++;
   }
@@ -104,7 +116,7 @@ void setup() {
     Serial.print("📍 ESP32 IP Address: ");
     Serial.println(WiFi.localIP());
   } else {
-    Serial.println("\n⚠️ Wi-Fi Connection Timeout. Will retry in loop.");
+    Serial.println("\n⚠️ Wi-Fi Connection Timeout. Will retry background connection.");
   }
 
   Serial.println("==============================================");
@@ -113,6 +125,16 @@ void setup() {
 }
 
 void loop() {
+  // Non-blocking Wi-Fi auto-reconnection (prevents Wi-Fi stack crash)
+  if (WiFi.status() != WL_CONNECTED) {
+    if (millis() - lastWifiRetry > 10000) {
+      lastWifiRetry = millis();
+      Serial.println("📶 [Wi-Fi Reconnect] Attempting Wi-Fi reconnection...");
+      WiFi.disconnect();
+      WiFi.reconnect();
+    }
+  }
+
   // 1. Check for RFID Card Scan
   if (rfid.PICC_IsNewCardPresent() && rfid.PICC_ReadCardSerial()) {
     // Extract Card UID e.g. "2C:4F:6D:05"
@@ -141,29 +163,26 @@ void loop() {
     lastStatusCheck = millis();
     checkMachineStatusFromServer();
   }
+
+  yield();
 }
 
 void verifyRfidWithServer(String uid) {
   if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("⚠️ Wi-Fi Disconnected! Reconnecting...");
-    WiFi.begin(ssid, password);
-    delay(2000);
-    if (WiFi.status() != WL_CONNECTED) return;
+    Serial.println("⚠️ Wi-Fi Not Connected! Cannot verify RFID scan right now.");
+    return;
   }
 
   // Ensure current relay state is firmly held before making HTTP POST
   digitalWrite(RELAY_PIN, currentRelayState ? RELAY_ON : RELAY_OFF);
 
   HTTPClient http;
+  http.setTimeout(4000);
 
   // HTTPS Communication Layer Setup
   if (BACKEND_BASE_URL.startsWith("https")) {
     WiFiClientSecure client;
-    // =========================================================================
-    // SECURITY WARNING / TEMPORARY PRODUCTION SECURITY LIMITATION:
-    // setInsecure() bypasses SSL certificate validation for prototype deployment.
-    // For strict production security, replace setInsecure() with client.setCACert(rootCACertificate).
-    // =========================================================================
+    client.setHandshakeTimeout(4);
     client.setInsecure();
     http.begin(client, scanUrl);
   } else {
