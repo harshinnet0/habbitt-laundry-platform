@@ -604,9 +604,15 @@ app.get('/api/bookings/receipt/:id', authenticate, async (req, res) => {
 const isBookingActiveNow = (b, now) => {
   if (!b) return false;
 
-  // 1. Direct JavaScript Date comparison (with 10-min buffer before start)
   const start = new Date(b.startTime);
   const end   = new Date(b.endTime);
+
+  // If slot has explicit end time and current time has passed it, it's expired!
+  if (end && !isNaN(end.getTime()) && now > end) {
+    return false;
+  }
+
+  // 1. Direct JavaScript Date comparison (with 10-min buffer before start)
   const bufferBefore = new Date(start.getTime() - 10 * 60 * 1000);
   if (now >= bufferBefore && now <= end) {
     return true;
@@ -621,6 +627,7 @@ const isBookingActiveNow = (b, now) => {
   }
 
   // 3. IST Time & Date String Matcher (Fallback for slots formatted like "03:00 PM - 04:00 PM")
+  // Only apply for standard slots, not custom Mins slots which already rely on start/end dates
   try {
     const istDateString = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
     const istTimeStr    = now.toLocaleTimeString('en-US', { timeZone: 'Asia/Kolkata', hour12: false });
@@ -628,7 +635,7 @@ const isBookingActiveNow = (b, now) => {
     const nowTotalMins  = currentHour * 60 + currentMin;
 
     const bDate = b.date ? String(b.date).trim() : '';
-    if (bDate === istDateString && b.timeSlot) {
+    if (bDate === istDateString && b.timeSlot && !b.timeSlot.toLowerCase().includes('mins')) {
       const parts = String(b.timeSlot).split(' - ');
       const parseSlotTime = (tStr) => {
         const cleanStr = tStr.replace(/^[^\d]*/, '').trim();
@@ -637,6 +644,7 @@ const isBookingActiveNow = (b, now) => {
         const timePart = cleanStr.substring(0, spaceIdx);
         const modifier = cleanStr.substring(spaceIdx + 1).toUpperCase();
         let [h, m] = timePart.split(':').map(Number);
+        if (isNaN(h)) return null;
         if (modifier === 'PM' && h < 12) h += 12;
         if (modifier === 'AM' && h === 12) h = 0;
         return { hour: h, minute: m || 0 };
@@ -903,11 +911,12 @@ app.get('/api/machine/status', async (req, res) => {
         machineObj.status = 'STANDBY';
         machineObj.activeBookingId = null;
         machineObj.activeUser = null;
+        machineObj.slotEndTime = null;
         if (!useInMemory && mongoose.connection.readyState === 1) {
           try {
             await Machine.findOneAndUpdate(
               { machineId: 'HABBITT-M01' }, 
-              { relayState: false, status: 'STANDBY', activeBookingId: null, activeUser: null }
+              { relayState: false, status: 'STANDBY', activeBookingId: null, activeUser: null, slotEndTime: null }
             );
           } catch(e){}
         } else {
@@ -915,6 +924,7 @@ app.get('/api/machine/status', async (req, res) => {
           inMemoryStore.machine.status = 'STANDBY';
           inMemoryStore.machine.activeBookingId = null;
           inMemoryStore.machine.activeUser = null;
+          inMemoryStore.machine.slotEndTime = null;
         }
       }
     }
@@ -991,7 +1001,7 @@ setInterval(async () => {
           console.log(`⏰ [BACKGROUND AUTO-OFF] Booked slot time finished! Turning OFF Machine Relay automatically.`);
           await Machine.findOneAndUpdate(
             { machineId: 'HABBITT-M01' },
-            { relayState: false, status: 'IDLE', activeBookingId: null, activeUser: null }
+            { relayState: false, status: 'STANDBY', activeBookingId: null, activeUser: null, slotEndTime: null }
           );
         }
       }
@@ -1001,9 +1011,10 @@ setInterval(async () => {
         if (now > new Date(machine.slotEndTime)) {
           console.log(`⏰ [BACKGROUND AUTO-OFF] Booked slot time finished! Turning OFF Machine Relay automatically.`);
           machine.relayState = false;
-          machine.status = 'IDLE';
+          machine.status = 'STANDBY';
           machine.activeBookingId = null;
           machine.activeUser = null;
+          machine.slotEndTime = null;
         }
       }
     }

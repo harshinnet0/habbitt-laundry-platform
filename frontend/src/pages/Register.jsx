@@ -10,7 +10,7 @@ export const RegisterPage = () => {
     email: '',
     phone: '',
     password: '',
-    rfidCardId: 'A3:B4:5C:D6'
+    rfidCardId: ''
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');

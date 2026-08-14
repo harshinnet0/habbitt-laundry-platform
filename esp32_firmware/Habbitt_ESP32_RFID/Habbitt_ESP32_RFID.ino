@@ -161,7 +161,7 @@ void processRFIDScan(String uid) {
           currentRelayState = true;
           Serial.println("==============================================");
           Serial.println("🎉 ACCESS GRANTED");
-          Serial.println("⚡ RELAY ACTIVATED");
+          Serial.println("⚡ RELAY ACTIVATED (GPIO " + String(RELAY_PIN) + " -> " + (IS_ACTIVE_LOW ? "LOW" : "HIGH") + ")");
           Serial.print("👤 User: ");
           Serial.println(userName);
           Serial.print("💬 ");
@@ -173,9 +173,11 @@ void processRFIDScan(String uid) {
           Serial.print("💬 ");
           Serial.println(message);
           Serial.println("==============================================");
-          // SAFE RELAY PROTECTION: If access is denied, DO NOT turn off relay if machine is currently running!
-          if (!currentRelayState) {
+          // If server says relay state should be OFF, force relay OFF
+          if (!targetRelayState) {
+            currentRelayState = false;
             digitalWrite(RELAY_PIN, RELAY_OFF);
+            Serial.println("🔴 Relay set to OFF (GPIO " + String(RELAY_PIN) + " -> " + (IS_ACTIVE_LOW ? "HIGH" : "LOW") + ")");
           } else {
             Serial.println("ℹ️ Machine currently running active session. Relay remains ON.");
           }
@@ -220,7 +222,8 @@ void checkMachineStatusHeartbeat() {
         currentRelayState = targetRelayState;
         digitalWrite(RELAY_PIN, currentRelayState ? RELAY_ON : RELAY_OFF);
         Serial.print("🔄 [HEARTBEAT] Relay state updated from server: ");
-        Serial.println(currentRelayState ? "ON (RUNNING)" : "OFF (STANDBY)");
+        Serial.print(currentRelayState ? "ON (RUNNING)" : "OFF (STANDBY)");
+        Serial.println(" -> GPIO " + String(RELAY_PIN) + " set to " + (currentRelayState ? (IS_ACTIVE_LOW ? "LOW" : "HIGH") : (IS_ACTIVE_LOW ? "HIGH" : "LOW")));
       }
     }
   }
