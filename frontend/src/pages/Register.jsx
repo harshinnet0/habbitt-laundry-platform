@@ -1,7 +1,7 @@
 import React, { useState, useContext } from 'react';
 import { AuthContext } from '../context/AuthContext';
 import { API_BASE_URL } from '../config/api';
-import { WashingMachine, User, Mail, Phone, Lock, CreditCard, ArrowRight, Building2 } from 'lucide-react';
+import { WashingMachine, User, Mail, Phone, Lock, CreditCard, ArrowRight, ShieldCheck } from 'lucide-react';
 
 export const RegisterPage = () => {
   const { login, setCurrentView } = useContext(AuthContext);
@@ -10,7 +10,6 @@ export const RegisterPage = () => {
     email: '',
     phone: '',
     password: '',
-    hostelName: '',
     rfidCardId: 'A3:B4:5C:D6'
   });
   const [loading, setLoading] = useState(false);
@@ -122,22 +121,6 @@ export const RegisterPage = () => {
                 value={formData.password}
                 onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                 placeholder="••••••••"
-                className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 focus:bg-white transition-all"
-              />
-            </div>
-          </div>
-
-          {/* Hostel / PG Name */}
-          <div>
-            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Hostel / PG Name</label>
-            <div className="relative">
-              <Building2 className="w-5 h-5 text-slate-400 absolute left-4 top-3.5" />
-              <input
-                type="text"
-                required
-                value={formData.hostelName}
-                onChange={(e) => setFormData({ ...formData, hostelName: e.target.value })}
-                placeholder="e.g. St. Xavier Boys PG / Green Park Hostel"
                 className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 focus:bg-white transition-all"
               />
             </div>

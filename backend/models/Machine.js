@@ -10,7 +10,6 @@ const machineSchema = new mongoose.Schema({
   activeBookingId: { type: String, default: null, index: true },
   activeUser: { type: String, default: null },
   activeUserId: { type: String, default: null, index: true },
-  activeRfidCardId: { type: String, default: null, index: true },
   lastCardScanned: { type: String, default: null },
   lastScanTime: { type: Date, default: null },
   lastScanStatus: { type: String, default: null },
