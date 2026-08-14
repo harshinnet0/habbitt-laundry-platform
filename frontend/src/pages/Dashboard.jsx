@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useContext } from 'react';
 import { AuthContext } from '../context/AuthContext';
 import { API_BASE_URL } from '../config/api';
-import { WashingMachine, Power, User, Phone, CheckCircle2, ShieldCheck, Zap, Calendar, CreditCard, Clock, RefreshCw } from 'lucide-react';
+import { WashingMachine, Power, User, Phone, CheckCircle2, ShieldCheck, Zap, Calendar, CreditCard, Clock, RefreshCw, Building2 } from 'lucide-react';
 
 export const DashboardPage = () => {
   const { user, token, setCurrentView, machineStatus, toggleRelay } = useContext(AuthContext);
@@ -127,6 +127,10 @@ export const DashboardPage = () => {
                 <span className="flex items-center gap-1 font-mono text-[11px] sm:text-xs text-orange-600 bg-orange-50 px-1.5 py-0.5 rounded border border-orange-200 truncate">
                   <CreditCard className="w-3 h-3 shrink-0" /> Card: {user?.rfidCardId || 'N/A'}
                 </span>
+                <span className="text-slate-300 hidden xs:inline">•</span>
+                <span className="flex items-center gap-1 text-[11px] sm:text-xs text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200 truncate font-semibold">
+                  <Building2 className="w-3 h-3 shrink-0" /> {user?.hostelName || 'Main PG / Hostel'}
+                </span>
               </div>
             </div>
           </div>
@@ -163,102 +167,155 @@ export const DashboardPage = () => {
         </div>
 
         {/* Machine Status Card with Smartwatch Display & Real-Time Heartbeat (Right Column) */}
-        <div className={`rounded-3xl p-5 border flex flex-col justify-between gap-3 transition-all duration-300 ${
-          isOffline 
-            ? 'bg-red-50/50 border-red-200 shadow-soft' 
-            : isMachineOn 
-            ? 'bg-gradient-to-br from-amber-500/10 via-orange-500/10 to-amber-500/5 border-orange-300 shadow-orange-glow' 
-            : 'bg-white border-slate-200 shadow-soft'
-        }`}>
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2.5">
-              <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${
-                isOffline 
-                  ? 'bg-red-100 text-red-600 border border-red-200' 
-                  : isMachineOn 
-                  ? 'bg-orange-600 text-white shadow-orange-glow' 
-                  : 'bg-slate-100 text-slate-400'
-              }`}>
-                <WashingMachine className={`w-5 h-5 ${isMachineOn && !isOffline ? 'animate-pulse' : ''}`} />
-              </div>
-              <div>
-                <h3 className="text-xs font-extrabold text-slate-900 leading-tight">Machine Status</h3>
-                <p className="text-[10px] text-slate-500 font-semibold">
-                  Last Heartbeat: <span className={isOffline ? 'text-red-600 font-bold' : 'text-emerald-700 font-bold'}>
-                    {formatLastHeartbeat(machineStatus?.lastHeartbeatSecondsAgo)}
-                  </span>
-                </p>
-              </div>
-            </div>
+        {(() => {
+          const isMySession = machineStatus?.isMySession === true;
+          const canControl = machineStatus?.canControl === true;
+          const isOccupiedByOther = machineStatus?.status === 'UNAVAILABLE' || (!isMySession && machineStatus?.relayState === true);
+          const isMachineOn = machineStatus?.relayState === true || (isMySession && machineStatus?.status === 'RUNNING');
 
-            <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase ${
+          let badgeText = 'STANDBY';
+          let badgeColor = 'bg-slate-100 text-slate-600 border-slate-200';
+          let dotColor = 'bg-slate-400';
+
+          if (isOffline) {
+            badgeText = 'OFFLINE';
+            badgeColor = 'bg-red-100 text-red-700 border-red-200';
+            dotColor = 'bg-red-500';
+          } else if (isOccupiedByOther) {
+            badgeText = 'UNAVAILABLE';
+            badgeColor = 'bg-amber-100 text-amber-800 border-amber-200';
+            dotColor = 'bg-amber-500';
+          } else if (isMachineOn && isMySession) {
+            badgeText = 'RUNNING';
+            badgeColor = 'bg-orange-100 text-orange-700 border-orange-200';
+            dotColor = 'bg-orange-500 animate-ping';
+          }
+
+          return (
+            <div className={`rounded-3xl p-5 border flex flex-col justify-between gap-3 transition-all duration-300 ${
               isOffline 
-                ? 'bg-red-100 text-red-700 border border-red-200' 
+                ? 'bg-red-50/50 border-red-200 shadow-soft' 
+                : isOccupiedByOther
+                ? 'bg-amber-50/40 border-amber-200 shadow-soft'
                 : isMachineOn 
-                ? 'bg-orange-100 text-orange-700 border border-orange-200' 
-                : 'bg-slate-100 text-slate-600 border border-slate-200'
+                ? 'bg-gradient-to-br from-amber-500/10 via-orange-500/10 to-amber-500/5 border-orange-300 shadow-orange-glow' 
+                : 'bg-white border-slate-200 shadow-soft'
             }`}>
-              <span className={`w-1.5 h-1.5 rounded-full ${
-                isOffline ? 'bg-red-500' : isMachineOn ? 'bg-orange-500 animate-ping' : 'bg-slate-400'
-              }`}></span>
-              {isOffline ? 'OFFLINE' : isMachineOn ? 'RUNNING' : 'STANDBY'}
-            </span>
-          </div>
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2.5">
+                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${
+                    isOffline 
+                      ? 'bg-red-100 text-red-600 border border-red-200' 
+                      : (isMachineOn && isMySession)
+                      ? 'bg-orange-600 text-white shadow-orange-glow' 
+                      : 'bg-slate-100 text-slate-400'
+                  }`}>
+                    <WashingMachine className={`w-5 h-5 ${(isMachineOn && isMySession && !isOffline) ? 'animate-pulse' : ''}`} />
+                  </div>
+                  <div>
+                    <h3 className="text-xs font-extrabold text-slate-900 leading-tight">Machine Status</h3>
+                    <p className="text-[10px] text-slate-500 font-semibold">
+                      Last Heartbeat: <span className={isOffline ? 'text-red-600 font-bold' : 'text-emerald-700 font-bold'}>
+                        {formatLastHeartbeat(machineStatus?.lastHeartbeatSecondsAgo)}
+                      </span>
+                    </p>
+                  </div>
+                </div>
 
-          {/* Smartwatch Digital OLED Countdown Display */}
-          <div className="bg-slate-950 p-3.5 rounded-2xl border border-slate-800 shadow-inner flex items-center justify-between gap-2">
-            <div>
-              <div className="text-[10px] font-extrabold uppercase tracking-wider text-orange-400 flex items-center gap-1">
-                <Clock className={`w-3 h-3 ${isMachineOn && !isOffline ? 'animate-spin text-orange-500' : 'text-slate-500'}`} /> Wash Time Reminder
+                <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase border ${badgeColor}`}>
+                  <span className={`w-1.5 h-1.5 rounded-full ${dotColor}`}></span>
+                  {badgeText}
+                </span>
               </div>
-              <div className="text-[10px] text-slate-400 font-medium">Smartwatch Digital Display</div>
-            </div>
 
-            <div className="bg-black/90 px-3 py-1.5 rounded-xl border border-orange-500/40 shadow-orange-glow font-mono flex items-center gap-0.5">
-              <span className="text-xl font-black text-orange-500 tracking-tight">
-                {formatCountdown(remainingSeconds).mm}
-              </span>
-              <span className={`text-xl font-black text-orange-500 ${isMachineOn && !isOffline ? 'animate-pulse' : ''}`}>:</span>
-              <span className="text-xl font-black text-orange-500 tracking-tight">
-                {formatCountdown(remainingSeconds).ss}
-              </span>
-            </div>
-          </div>
+              {/* Smartwatch Digital OLED Countdown Display (Only for active session owner) */}
+              {isMySession && isMachineOn ? (
+                <div className="bg-slate-950 p-3.5 rounded-2xl border border-slate-800 shadow-inner flex items-center justify-between gap-2">
+                  <div>
+                    <div className="text-[10px] font-extrabold uppercase tracking-wider text-orange-400 flex items-center gap-1">
+                      <Clock className="w-3 h-3 animate-spin text-orange-500" /> Wash Time Remaining
+                    </div>
+                    <div className="text-[10px] text-slate-400 font-medium">Smartwatch Digital Display</div>
+                  </div>
 
-          {isOffline && (
-            <div className="p-3 rounded-2xl bg-red-100/80 border border-red-200 text-red-800 text-xs space-y-1 animate-in fade-in duration-200">
-              <div className="font-extrabold flex items-center gap-1 text-red-900">
-                ⚠️ ESP32 is not responding.
+                  <div className="bg-black/90 px-3 py-1.5 rounded-xl border border-orange-500/40 shadow-orange-glow font-mono flex items-center gap-0.5">
+                    <span className="text-xl font-black text-orange-500 tracking-tight">
+                      {formatCountdown(machineStatus?.remainingSeconds || remainingSeconds).mm}
+                    </span>
+                    <span className="text-xl font-black text-orange-500 animate-pulse">:</span>
+                    <span className="text-xl font-black text-orange-500 tracking-tight">
+                      {formatCountdown(machineStatus?.remainingSeconds || remainingSeconds).ss}
+                    </span>
+                  </div>
+                </div>
+              ) : isOccupiedByOther ? (
+                <div className="bg-amber-950/20 p-3.5 rounded-2xl border border-amber-200/40 text-center">
+                  <div className="text-xs font-bold text-amber-800 flex items-center justify-center gap-1.5">
+                    <ShieldCheck className="w-4 h-4 text-amber-600" /> Machine Currently Unavailable
+                  </div>
+                  <p className="text-[10px] text-amber-700 font-medium mt-0.5">Station is currently in use. Please book an upcoming time slot.</p>
+                </div>
+              ) : (
+                <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 text-center">
+                  <div className="text-xs font-bold text-slate-700 flex items-center justify-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600" /> Machine Ready & Standby
+                  </div>
+                  <p className="text-[10px] text-slate-500 font-medium mt-0.5">
+                    {canControl ? 'You have an active booking! Click Manual Turn ON or tap your RFID card.' : 'Book a time slot to access the washing machine.'}
+                  </p>
+                </div>
+              )}
+
+              {isOffline && (
+                <div className="p-3 rounded-2xl bg-red-100/80 border border-red-200 text-red-800 text-xs space-y-1 animate-in fade-in duration-200">
+                  <div className="font-extrabold flex items-center gap-1 text-red-900">
+                    ⚠️ ESP32 is not responding.
+                  </div>
+                  <p className="text-[10px] text-red-700 font-semibold mt-0.5">Possible reasons:</p>
+                  <ul className="text-[10px] text-red-700 list-disc list-inside font-medium space-y-0.5">
+                    <li>Power Failure</li>
+                    <li>ESP32 Disconnected</li>
+                    <li>WiFi Connection Lost</li>
+                  </ul>
+                </div>
+              )}
+
+              {/* Machine Controls: Available strictly for Session Owner or Authorized user */}
+              <div>
+                {isMySession && isMachineOn ? (
+                  <button
+                    onClick={() => toggleRelay(false)}
+                    className="w-full py-2 bg-red-600 hover:bg-red-700 text-white font-extrabold text-xs rounded-xl shadow-sm flex items-center justify-center gap-1.5 transition-all"
+                  >
+                    <Power className="w-3.5 h-3.5" />
+                    <span>Manual Stop</span>
+                  </button>
+                ) : isOccupiedByOther ? (
+                  <div className="w-full py-2 bg-slate-100 text-slate-400 font-extrabold text-xs rounded-xl border border-slate-200 flex items-center justify-center gap-1.5 cursor-not-allowed">
+                    <ShieldCheck className="w-3.5 h-3.5 text-slate-400" />
+                    <span>Machine Currently Unavailable</span>
+                  </div>
+                ) : canControl ? (
+                  <button
+                    onClick={() => toggleRelay(true)}
+                    className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl shadow-sm transition-all flex items-center justify-center gap-1.5"
+                  >
+                    <Power className="w-3.5 h-3.5" />
+                    <span>Manual Turn ON</span>
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => setCurrentView('book-slot')}
+                    className="w-full py-2 bg-slate-100 hover:bg-orange-50 text-slate-600 hover:text-orange-700 font-extrabold text-xs rounded-xl border border-slate-200 transition-all flex items-center justify-center gap-1.5"
+                  >
+                    <Calendar className="w-3.5 h-3.5 text-orange-600" />
+                    <span>Book Time Slot</span>
+                  </button>
+                )}
               </div>
-              <p className="text-[10px] text-red-700 font-semibold mt-0.5">Possible reasons:</p>
-              <ul className="text-[10px] text-red-700 list-disc list-inside font-medium space-y-0.5">
-                <li>Power Failure</li>
-                <li>ESP32 Disconnected</li>
-                <li>WiFi Connection Lost</li>
-              </ul>
             </div>
-          )}
-
-          <div>
-            {isMachineOn ? (
-              <button
-                onClick={() => toggleRelay(false)}
-                className="w-full py-2 bg-red-600 hover:bg-red-700 text-white font-extrabold text-xs rounded-xl shadow-sm flex items-center justify-center gap-1.5 transition-all"
-              >
-                <Power className="w-3.5 h-3.5" />
-                <span>Manual Stop</span>
-              </button>
-            ) : (
-              <button
-                onClick={() => toggleRelay(true)}
-                className="w-full py-2 bg-slate-100 hover:bg-emerald-100 text-slate-700 hover:text-emerald-800 font-extrabold text-xs rounded-xl border border-slate-200 transition-all flex items-center justify-center gap-1.5"
-              >
-                <Power className="w-3.5 h-3.5 text-slate-600" />
-                <span>Manual Turn ON</span>
-              </button>
-            )}
-          </div>
-        </div>
+          );
+        })()}
 
       </div>
 
